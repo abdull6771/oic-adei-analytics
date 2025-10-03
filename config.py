@@ -19,10 +19,16 @@ def get_config_value(streamlit_section, streamlit_key, env_key, default_value):
     """Get configuration value from Streamlit secrets first, then env vars, then default"""
     if HAS_STREAMLIT:
         try:
-            if hasattr(st, 'secrets') and streamlit_section in st.secrets:
-                return st.secrets[streamlit_section].get(streamlit_key, default_value)
-        except:
+            # Only use secrets if they actually exist and contain the section
+            if hasattr(st, 'secrets') and hasattr(st.secrets, streamlit_section):
+                section = getattr(st.secrets, streamlit_section)
+                if streamlit_key in section:
+                    return section[streamlit_key]
+        except Exception:
+            # If secrets access fails, fall back to environment variables
             pass
+    
+    # Fall back to environment variables
     return os.getenv(env_key, default_value)
 
 # Database Configuration

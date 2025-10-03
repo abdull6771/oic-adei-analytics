@@ -2,24 +2,44 @@
 # ==================================
 
 import streamlit as st
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import psycopg2
-from sqlalchemy import create_engine
-import numpy as np
-from datetime import datetime
-import warnings
-warnings.filterwarnings('ignore')
 
-# Page configuration
+# Page configuration - MUST be first Streamlit command
 st.set_page_config(
     page_title="OIC ADEI Analytics",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Import other libraries after page config
+import pandas as pd
+import numpy as np
+from datetime import datetime
+import warnings
+warnings.filterwarnings('ignore')
+
+# Import plotting libraries with error handling for orjson issues
+try:
+    import plotly.express as px
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+    import plotly.io as pio
+    # Set plotly renderer to avoid orjson circular import issues
+    pio.renderers.default = "browser"
+except ImportError as e:
+    st.error(f"Plotly import error: {e}")
+    st.stop()
+
+# Database imports
+try:
+    import psycopg2
+    from sqlalchemy import create_engine
+except ImportError as e:
+    st.error(f"Database library import error: {e}")
+    st.stop()
+
+# Import config AFTER page config to avoid conflicts
+from config import DATABASE_CONFIG, APP_CONFIG
 
 # Custom CSS for better styling
 st.markdown("""
@@ -60,34 +80,52 @@ st.markdown("""
 # Database connection configuration
 @st.cache_resource
 def init_connection():
-    """Initialize database connection"""
+    """Initialize database connection with proper error handling"""
     try:
-        # Neon PostgreSQL connection
-        connection_string = "postgresql://neondb_owner:npg_mvnKs8P2Vrbd@ep-noisy-darkness-adflnyur-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require"
-        engine = create_engine(connection_string)
+        # Use config system for database connection
+        db_config = DATABASE_CONFIG
+        connection_string = f"postgresql://{db_config['username']}:{db_config['password']}@{db_config['host']}:{db_config['port']}/{db_config['database']}?sslmode={db_config['sslmode']}"
+        
+        # Create engine with proper connection pooling and error handling
+        engine = create_engine(
+            connection_string,
+            pool_pre_ping=True,  # Verify connections before use
+            pool_recycle=3600,   # Recycle connections every hour
+            connect_args={"sslmode": db_config['sslmode']}
+        )
+        
+        # Test the connection
+        with engine.connect() as conn:
+            conn.execute("SELECT 1")
+            
         return engine
     except Exception as e:
         st.error(f"Database connection failed: {str(e)}")
+        st.info("Please check your database credentials in Streamlit Cloud secrets.")
         return None
 
 # Load data functions
 @st.cache_data(ttl=3600)  # Cache for 1 hour
 def load_data():
-    """Load all data from database"""
+    """Load all data from database with proper transaction handling"""
     engine = init_connection()
     if engine is None:
         return None
     
     try:
-        # Main dataset
-        query = """
-        SELECT * FROM oic_adei_data 
-        ORDER BY country, year
-        """
-        df = pd.read_sql(query, engine)
-        return df
+        # Use connection context manager for proper transaction handling
+        with engine.connect() as connection:
+            # Main dataset query
+            query = """
+            SELECT * FROM oic_adei_data 
+            ORDER BY country, year
+            """
+            df = pd.read_sql(query, connection)
+            return df
+            
     except Exception as e:
         st.error(f"Error loading data: {str(e)}")
+        st.info("Please check that your database contains the 'oic_adei_data' table.")
         return None
 
 def get_countries():
@@ -106,48 +144,90 @@ def get_years():
 
 @st.cache_data(ttl=3600)
 def load_country_summary():
-    """Load country summary view"""
+    """Load country summary view with proper transaction handling"""
     engine = init_connection()
     if engine is None:
         return None
     
     try:
-        query = "SELECT * FROM oic_adei_data_country_summary ORDER BY avg_adei_score DESC"
-        df = pd.read_sql(query, engine)
-        return df
+        with engine.connect() as connection:
+            query = "SELECT * FROM oic_adei_data_country_summary ORDER BY avg_adei_score DESC"
+            df = pd.read_sql(query, connection)
+            return df
     except Exception as e:
-        st.error(f"Error loading country summary: {str(e)}")
-        return None
+        # If view doesn't exist, try to create it from main table
+        try:
+            with engine.connect() as connection:
+                fallback_query = """
+                SELECT country, 
+                       AVG(adei_score) as avg_adei_score,
+                       COUNT(*) as record_count
+                FROM oic_adei_data 
+                GROUP BY country
+                ORDER BY avg_adei_score DESC
+                """
+                df = pd.read_sql(fallback_query, connection)
+                return df
+        except Exception as e2:
+            st.error(f"Error loading country summary: {str(e2)}")
+            return None
 
 @st.cache_data(ttl=3600)
 def load_latest_data():
-    """Load latest year data"""
+    """Load latest year data with proper transaction handling"""
     engine = init_connection()
     if engine is None:
         return None
     
     try:
-        query = "SELECT * FROM oic_adei_data_latest"
-        df = pd.read_sql(query, engine)
-        return df
+        with engine.connect() as connection:
+            query = "SELECT * FROM oic_adei_data_latest"
+            df = pd.read_sql(query, connection)
+            return df
     except Exception as e:
-        st.error(f"Error loading latest data: {str(e)}")
-        return None
+        # If view doesn't exist, try to get latest year from main table
+        try:
+            with engine.connect() as connection:
+                fallback_query = """
+                SELECT * FROM oic_adei_data 
+                WHERE year = (SELECT MAX(year) FROM oic_adei_data)
+                ORDER BY country
+                """
+                df = pd.read_sql(fallback_query, connection)
+                return df
+        except Exception as e2:
+            st.error(f"Error loading latest data: {str(e2)}")
+            return None
 
 @st.cache_data(ttl=3600)
 def load_trends_data():
-    """Load year-over-year trends"""
+    """Load year-over-year trends with proper transaction handling"""
     engine = init_connection()
     if engine is None:
         return None
     
     try:
-        query = "SELECT * FROM oic_adei_data_yoy_trends ORDER BY year"
-        df = pd.read_sql(query, engine)
-        return df
+        with engine.connect() as connection:
+            query = "SELECT * FROM oic_adei_data_yoy_trends ORDER BY year"
+            df = pd.read_sql(query, connection)
+            return df
     except Exception as e:
-        st.error(f"Error loading trends data: {str(e)}")
-        return None
+        # If view doesn't exist, try to calculate trends from main table
+        try:
+            with engine.connect() as connection:
+                fallback_query = """
+                SELECT year, 
+                       AVG(adei_score) as avg_score,
+                       COUNT(*) as country_count
+                FROM oic_adei_data 
+                GROUP BY year
+                ORDER BY year
+                """
+                df = pd.read_sql(fallback_query, connection)
+                return df
+        except Exception as e2:
+            st.error(f"Error loading trends data: {str(e2)}")
+            return None
 
 # Utility functions
 def create_metric_card(value, label, delta=None):
