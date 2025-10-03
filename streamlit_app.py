@@ -33,7 +33,7 @@ except ImportError as e:
 # Database imports
 try:
     import psycopg2
-    from sqlalchemy import create_engine
+    from sqlalchemy import create_engine, text
 except ImportError as e:
     st.error(f"Database library import error: {e}")
     st.stop()
@@ -96,7 +96,7 @@ def init_connection():
         
         # Test the connection
         with engine.connect() as conn:
-            conn.execute("SELECT 1")
+            conn.execute(text("SELECT 1"))
             
         return engine
     except Exception as e:
