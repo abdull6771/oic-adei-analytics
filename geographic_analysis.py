@@ -12,23 +12,34 @@ import json
 
 # OIC Regional Groupings
 OIC_REGIONS = {
-    'Middle East': [
-        'Saudi Arabia', 'United Arab Emirates', 'Qatar', 'Kuwait', 'Bahrain', 'Oman',
-        'Iraq', 'Iran', 'Syria', 'Lebanon', 'Jordan', 'Palestine', 'Yemen'
+    'Gulf Cooperation Council (GCC)': [
+        'Bahrain', 'Kuwait', 'Oman', 'Qatar', 'Saudi Arabia', 'United Arab Emirates'
     ],
-    'Africa': [
-        'Egypt', 'Morocco', 'Algeria', 'Tunisia', 'Libya', 'Sudan', 'Somalia', 'Djibouti',
-        'Comoros', 'Chad', 'Niger', 'Mali', 'Burkina Faso', 'Senegal', 'Gambia',
-        'Guinea', 'Guinea-Bissau', 'Sierra Leone', 'Ivory Coast', 'Benin', 'Togo',
-        'Nigeria', 'Cameroon', 'Gabon', 'Uganda', 'Mozambique'
+    'Non-GCC Middle East': [
+        'Iran', 'Iraq', 'Jordan', 'Lebanon', 'Palestine', 'Syria', 'Yemen'
     ],
-    'Asia': [
-        'Turkey', 'Azerbaijan', 'Kazakhstan', 'Kyrgyzstan', 'Tajikistan', 'Turkmenistan',
-        'Uzbekistan', 'Afghanistan', 'Pakistan', 'Bangladesh', 'Maldives', 'Indonesia',
-        'Malaysia', 'Brunei'
+    'Southeast Asia (ASEAN)': [
+        'Brunei Darussalam', 'Indonesia', 'Malaysia'
     ],
-    'Europe': [
-        'Albania', 'Bosnia and Herzegovina', 'Kosovo'
+    'North Africa': [
+        'Algeria', 'Egypt', 'Libya', 'Morocco', 'Sudan', 'Tunisia'
+    ],
+    'West Africa': [
+        'Benin', 'Burkina Faso', 'Cameroon', 'Chad', 'Côte d\'Ivoire', 'The Gambia',
+        'Guinea', 'Guinea-Bissau', 'Mali', 'Mauritania', 'Niger', 'Nigeria',
+        'Senegal', 'Sierra Leone', 'Togo'
+    ],
+    'East Africa': [
+        'Comoros', 'Djibouti', 'Somalia', 'Uganda'
+    ],
+    'Central Asia': [
+        'Azerbaijan', 'Kazakhstan', 'Kyrgyzstan', 'Tajikistan', 'Turkmenistan'
+    ],
+    'South Asia': [
+        'Afghanistan', 'Bangladesh', 'Maldives', 'Pakistan'
+    ],
+    'South America': [
+        'Guyana', 'Suriname'
     ]
 }
 
@@ -93,7 +104,7 @@ def get_country_region(country: str) -> str:
     for region, countries in OIC_REGIONS.items():
         if country in countries:
             return region
-    return 'Other'
+    return None
 
 def show_geographic_analysis(df=None):
     """Main Geographic Analysis Interface"""
@@ -105,6 +116,9 @@ def show_geographic_analysis(df=None):
     
     # Add region column to dataframe
     df['region'] = df['country'].apply(get_country_region)
+    
+    # Filter out countries that are not part of the defined OIC regions
+    df = df[df['region'].notna()].copy()
     
     # Sidebar controls
     st.sidebar.markdown("### 🗺️ Geographic Controls")
